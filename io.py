@@ -12,6 +12,7 @@ class SatReader(object):
         comment_line_regex = re.compile(self.COMMENT_LINE_PATTERN)
         info_line_regex = re.compile(self.INFO_LINE_PATTERN)
         formula = []
+        num_props, num_clauses = 0, 0
 
         with open(self.input_path, 'r') as input_file:
             for line in input_file.readlines():
@@ -31,4 +32,4 @@ class SatReader(object):
                             if prop != 0:
                                 props.append(prop)
                         formula.append(props)
-        return CNF(formula)
+        return CNF(num_props, num_clauses, formula)

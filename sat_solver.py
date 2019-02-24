@@ -1,6 +1,7 @@
 import argparse
 
 from io import SatReader
+from solvers import BaselineDPLLSolver
 
 CONFIGS = None
 
@@ -13,7 +14,10 @@ def add_arguments(parser):
 def run_sat_solver(configs):
     sat_reader = SatReader(configs.input)
     cnf = sat_reader.read_input()
-    print(cnf)
+    solver = BaselineDPLLSolver()
+    result = solver.solve(cnf)
+    print("Sat solver run in", result["time"])
+    print(result["solution"])
 
 if __name__ == "__main__":
     solver_parser = argparse.ArgumentParser()
