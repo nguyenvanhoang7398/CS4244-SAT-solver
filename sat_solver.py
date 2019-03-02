@@ -12,18 +12,17 @@ def add_arguments(parser):
     parser.add_argument("--input", type=str, default="sat-examples/sat1.cnf", help="SAT input")
     parser.add_argument("--output", type=str, default="output.txt", help="SAT output")
     parser.add_argument("--solver-name", type=str, default="dpll", help="Name of the solver")
+    parser.add_argument("--log-level", type=str, default=None, help="Log level")
 
 def run_sat_solver(configs):
     sat_reader = SatReader(configs.input)
     cnf = sat_reader.read_input()
-    # solver = DPLL()
-    # assignments, unsat, elapse = solver.solve(cnf)
-    # if unsat:
-    #     print("UNSAT")
-    # else:
-    #     print("SAT with assignments", assignments)
-    solver = CDCL(cnf.formula, [x+1 for x in range(cnf.num_props)])
-    solver.solve()
+    solver = CDCL(cnf.formula, [x+1 for x in range(cnf.num_props)], configs.log_level)
+    sat = solver.solve()
+    if sat:
+        print("SAT")
+    else:
+        print("UNSAT")
 
 if __name__ == "__main__":
     solver_parser = argparse.ArgumentParser()
