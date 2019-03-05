@@ -6,17 +6,19 @@ from collections import deque
 import logging
 
 class CDCL(object):
-    def __init__(self, formula, atomic_props, log_level=None):
+    def __init__(self, formula, atomic_props, log_level=None, log_file=None):
         self.formula = formula
         self.atomic_props = atomic_props
-        self.debug = False
         self.assignments, self.level_assignments = {}, {}
         self.implication_graph, self.level_forced_assign_ap_map = {}, {}
-        self.set_log_level(log_level)
-    def set_log_level(self, log_level):
+        self.set_log_level(log_level, log_file)
+    def set_log_level(self, log_level, log_file):
         if log_level == "DEBUG":
             print("Set log level to {}".format(log_level))
-            logging.basicConfig(level=logging.DEBUG)
+            if log_file:
+                logging.basicConfig(filename=log_file, filemode='w', level=logging.DEBUG)
+            else:
+                logging.basicConfig(level=logging.DEBUG)
     def compute_ap_assignment_value(self, lit):
         return 1 if lit > 0 else 0
     def assign_ap(self, ap, level, value):
@@ -126,6 +128,8 @@ class CDCL(object):
         logging.debug("Backtrack to level {}".format(backtrack_level))
         return learnt_clause, backtrack_level
     def backtrack(self, backtrack_level, current_level):
+        forced_assign_ap = self.level_forced_assign_ap_map[backtrack_level]
+        forced_assign_ap_value = self.assignments[forced_assign_ap][0]
         for level in range(backtrack_level, current_level+1):
             logging.debug("Clearing level {}".format(level))
             assigned_aps = self.level_assignments[level]
@@ -137,28 +141,36 @@ class CDCL(object):
                     del self.implication_graph[-ap]
             del self.level_assignments[level]
             del self.level_forced_assign_ap_map[level]
+        return forced_assign_ap, forced_assign_ap_value
     def solve(self):
         self.assign_pure_aps()
         level = 0
-        while True:
+        all_assigned = False
+        sat = True
+        while not all_assigned:
             if level == 0:
                 unit_assignable = self.assign_unit_clause()
                 if not unit_assignable:
-                    return False
+                    sat = False
                 conflict, conflict_lit = self.propagate_assignments(level)
                 if conflict:
-                    return False
+                    sat = False
                 level += 1
-            else:
                 all_assigned = self.force_assign_ap(level)
-                if all_assigned:
-                    return True
+            else:
                 conflict, conflict_lit = self.propagate_assignments(level)
                 if conflict:
                     learnt_clause, backtrack_level = self.conflict_analyse(conflict_lit, level)
                     self.formula = [learnt_clause] + self.formula
                     if backtrack_level != 0:
-                        self.backtrack(backtrack_level, level)
+                        forced_assign_ap, forced_assign_ap_value = self.backtrack(backtrack_level, level)
+                        self._force_assign_ap(forced_assign_ap, backtrack_level, forced_assign_ap_value)
                     level = backtrack_level
                 else:
                     level += 1
+                    all_assigned = self.force_assign_ap(level)
+        if sat:
+            logging.debug("SAT")
+        else:
+            logging.debug("UNSAT")
+        return sat
