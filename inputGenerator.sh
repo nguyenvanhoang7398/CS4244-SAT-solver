@@ -7,9 +7,10 @@
 
 # example for input: 1 150 3 650
 # create file input1.cnf and file satis1.txt
-input_name="input${1}.cnf"
-cnfgen -o $input_name randkcnf $3 $2 $4
-output_name="./satis${1}.txt"
+uuid=$(uuidgen)
+input_name="input${uuid}.cnf"
+cnfgen -o $input_name randkcnf $2 $1 $3
+output_name="./satis${uuid}.txt"
 output=`cat $input_name | docker run --rm -i msoos/cryptominisat | tail -1`
 touch $output_name
 if [ "$output" = "s UNSATISFIABLE" ]
