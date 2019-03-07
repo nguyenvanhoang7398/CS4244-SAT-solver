@@ -15,6 +15,8 @@ class DPLL(object):
         self.backtracked = []
         self.visited = []
     def set_log_level(self, log_level, log_file):
+        for handler in logging.root.handlers[:]:
+            logging.root.removeHandler(handler)
         if log_level == "DEBUG":
             print("Set log level to {}".format(log_level))
             if log_file:

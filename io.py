@@ -1,20 +1,24 @@
 from cnf import CNF
 import re
+import os
+
+class SatWriter(object):
+    def write_output(self, output_path, output):
+        with open(output_path, 'w') as f:
+            f.write(output)
 
 class SatReader(object):
     COMMENT_LINE_PATTERN='c.*'
     INFO_LINE_PATTERN='p\s*cnf\s*(\d*)\s*(\d*)'
-    
-    def __init__(self, input_path):
-        self.input_path = input_path
-
-    def read_input(self):
+        
+    def read_input(self, input_path):
+        print("Read input from file {}".format(input_path))
         comment_line_regex = re.compile(self.COMMENT_LINE_PATTERN)
         info_line_regex = re.compile(self.INFO_LINE_PATTERN)
         formula = []
         num_props, num_clauses = 0, 0
 
-        with open(self.input_path, 'r') as input_file:
+        with open(input_path, 'r') as input_file:
             for line in input_file.readlines():
                 line = line.strip()
                 if line == "%" or not line:
