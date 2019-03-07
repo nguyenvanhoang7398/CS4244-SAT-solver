@@ -14,8 +14,11 @@ pip install  [--user] cnfgen
 ## CLI usage
 
 ### Create test cases
+config.txt
+[--num-file][--num-literal][--num-var][--num-clauses]
+
 ```
-./inputGenerator.sh [--input-index][--num-vars][--num-lits][--num-clauses]
+./inputGenerator.sh
 ```
 
 ```
