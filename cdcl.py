@@ -75,10 +75,14 @@ class CDCL(object):
         elif self.assignments[abs(lit)][0] == 1:
             return 1 if lit > 0 else 0
         return 1 if lit < 0 else 0
-    def uniform_assign_conflict_lit(self, clause):
-        return random.choice(clause)
-    def assign_conflict_lit(self, clause):
-        conflict_lit = self.uniform_assign_conflict_lit(clause)
+    def assign_conflict_lit(self, clause, level):
+        conflict_lit = -1
+        for lit in clause:
+            if self.assignments[abs(lit)][1] == level:
+                conflict_lit = lit
+                break
+        if conflict_lit == -1:
+            raise Exception("Conflict clause must have a lit assigned in conflict level.")
         logging.debug("Assign {} as conflict lit".format(conflict_lit))
         return conflict_lit
     def update_implication_graph(self, unassigned_lit, parents):
@@ -95,7 +99,7 @@ class CDCL(object):
                     continue
                 if -1 not in clause_values:
                     logging.debug("Conflict detected in clause {}".format(clause))
-                    conflict_lit = self.assign_conflict_lit(clause)
+                    conflict_lit = self.assign_conflict_lit(clause, level)
                     self.update_implication_graph(conflict_lit, [-lit for lit in clause if lit != conflict_lit])
                     return True, conflict_lit
                 if sum(clause_values) == -1:
@@ -164,9 +168,17 @@ class CDCL(object):
             else:
                 conflict, conflict_lit = self.propagate_assignments(level)
                 if conflict:
+                    if conflict_lit in self.implication_graph:
+                        logging.debug("Before bt Conflict lits in implication graph {}".format(self.implication_graph[conflict_lit]))
+                    if -conflict_lit in self.implication_graph:
+                        logging.debug("Before bt Conflict lits in implication graph {}".format(self.implication_graph[-conflict_lit]))                                        
                     learnt_clause, backtrack_level = self.conflict_analyse(conflict_lit, level)
                     self.formula = [learnt_clause] + self.formula
                     forced_assign_ap, forced_assign_ap_value = self.backtrack(backtrack_level, level)
+                    if conflict_lit in self.implication_graph:
+                        logging.debug("After bt Conflict lits in implication graph {}".format(self.implication_graph[conflict_lit]))
+                    if -conflict_lit in self.implication_graph:
+                        logging.debug("After bt Conflict lits in implication graph {}".format(self.implication_graph[-conflict_lit]))                    
                     if backtrack_level != 0:
                         self._force_assign_ap(forced_assign_ap, backtrack_level, forced_assign_ap_value)
                     level = backtrack_level

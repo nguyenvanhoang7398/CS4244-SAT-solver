@@ -13,16 +13,16 @@ config_file_name="config.txt"
 read num_file num_literal num_var num_clauses < $config_file_name
 
 rm -r input
-rm -r satis
+rm -r cryptominisat
 mkdir -p input
-mkdir -p satis
+mkdir -p cryptominisat
 
 while [ $num_file != 0 ]
 do
 	uuid=$(uuidgen)
 	input_name="./input/input${uuid}.cnf"
 	cnfgen -o $input_name randkcnf $num_literal $num_var $num_clauses
-	output_name="./satis/satis${uuid}.txt"
+	output_name="./cryptominisat/input${uuid}.cnf.out"
 	output=`cat $input_name | docker run --rm -i msoos/cryptominisat | tail -1`
 	touch $output_name
 	if [ "$output" = "s UNSATISFIABLE" ]
