@@ -2,16 +2,24 @@ import datetime
 import time
 import random
 import pprint
-from collections import deque
+from collections import deque, Counter
 import logging
+import operator
 
 class CDCL(object):
-    def __init__(self, formula, atomic_props, log_level=None, log_file=None):
+    def __init__(self, formula, atomic_props, log_level=None, log_file=None, branching_heuristic=None):
         self.formula = formula
         self.atomic_props = atomic_props
         self.assignments, self.level_assignments = {}, {}
-        self.implication_graph, self.level_forced_assign_ap_map = {}, {}
+        self.implication_graph, self.level_forced_assign_var_map = {}, {}
         self.set_log_level(log_level, log_file)
+        self.assign_next_var = self.choose_branching_heuristic(branching_heuristic)
+    def choose_branching_heuristic(self, branching_heuristic):
+        if branching_heuristic == "random":
+            return self.heuristic_random_assign_var
+        if branching_heuristic == "2clause":
+            return self.heuristic_2clause_assign_var
+        return self.heuristic_ordered_assign_var
     def set_log_level(self, log_level, log_file):
         for handler in logging.root.handlers[:]:
             logging.root.removeHandler(handler)
@@ -23,42 +31,59 @@ class CDCL(object):
                 logging.basicConfig(level=logging.DEBUG)
     def compute_ap_assignment_value(self, lit):
         return 1 if lit > 0 else 0
-    def assign_ap(self, ap, level, value):
-        if ap in self.assignments:
-            if self.assignments[ap][0] != value: 
+    def assign_var(self, var, level, value):
+        if var in self.assignments:
+            if self.assignments[var][0] != value: 
                 return False
             return True
-        self.assignments[ap] = (value, level)
+        self.assignments[var] = (value, level)
         if level not in self.level_assignments:
             self.level_assignments[level] = []
-        self.level_assignments[level].append(ap)
+        self.level_assignments[level].append(var)
         return True
     def assign_unit_clause(self):
         for clause in self.formula:
             if len(clause) == 1:
                 lit = clause[0]
-                assignable = self.assign_ap(abs(lit), 0, self.compute_ap_assignment_value(lit))
+                assignable = self.assign_var(abs(lit), 0, self.compute_ap_assignment_value(lit))
                 if not assignable:
                     return False
         return True
-    def ordered_assign_ap(self):
-        for ap in self.atomic_props:
-            if ap not in self.assignments:
-                return ap
+    def heuristic_ordered_assign_var(self):
+        for var in self.atomic_props:
+            if var not in self.assignments:
+                return var
         return 0
-    def _force_assign_ap(self, ap, level, value):
-        self.assign_ap(ap, level, value)
-        self.level_forced_assign_ap_map[level] = ap
-    def force_assign_ap(self, level):
-        next_ap = self.ordered_assign_ap()
-        if next_ap == 0:
+    def _force_assign_var(self, var, level, value):
+        self.assign_var(var, level, value)
+        self.level_forced_assign_var_map[level] = var
+    def heuristic_2clause_assign_var(self):
+        unassigned_var_counts = {}
+        for clause in self.formula:
+            unassigned_lits = [lit for lit in clause if abs(lit) not in self.assignments]
+            if len(unassigned_lits) == 2:
+                for lit in unassigned_lits:
+                    if abs(lit) not in unassigned_var_counts:
+                        unassigned_var_counts[abs(lit)] = 0
+                    unassigned_var_counts[abs(lit)] += 1
+        if len(unassigned_var_counts) == 0:
+            return self.heuristic_ordered_assign_var()
+        max_count = max(unassigned_var_counts.values())
+        most_occuring_vars = [var for var in unassigned_var_counts.keys() if unassigned_var_counts[var] == max_count]
+        return random.choice(most_occuring_vars)
+    def heuristic_random_assign_var(self):
+        unassigned_vars = [var for var in self.atomic_props if var not in self.assignments]
+        return 0 if len(unassigned_vars) == 0 else random.choice(unassigned_vars)
+    def force_assign_var(self, level):
+        next_var = self.assign_next_var()
+        if next_var == 0:
             return True
-        logging.debug("Force assign {} as 1 at level {}".format(next_ap, level))
+        logging.debug("Force assign {} as 1 at level {}".format(next_var, level))
         if level not in self.level_assignments:
             self.level_assignments[level] = []
-        self._force_assign_ap(next_ap, level, 1)
+        self._force_assign_var(next_var, level, 1)
         return False    
-    def assign_pure_aps(self):
+    def assign_pure_vars(self):
         lit_counts = {}
         for clause in self.formula:
             for lit in clause:
@@ -66,9 +91,9 @@ class CDCL(object):
                 lit_counts[lit] += 1
         for lit, _ in lit_counts.items():
             if -lit not in lit_counts:
-                assignable = self.assign_ap(abs(lit), 0, self.compute_ap_assignment_value(lit))
+                assignable = self.assign_var(abs(lit), 0, self.compute_ap_assignment_value(lit))
                 if not assignable:
-                    raise Exception("Pure ap must be assignable")
+                    raise Exception("Pure var must be assignable")
     def compute_val(self, lit):
         if abs(lit) not in self.assignments:
             return -1
@@ -76,12 +101,12 @@ class CDCL(object):
             return 1 if lit > 0 else 0
         return 1 if lit < 0 else 0
     def assign_conflict_lit(self, clause, level):
-        conflict_lit = -1
+        conflict_lit = 0
         for lit in clause:
             if self.assignments[abs(lit)][1] == level:
                 conflict_lit = lit
                 break
-        if conflict_lit == -1:
+        if conflict_lit == 0:
             raise Exception("Conflict clause must have a lit assigned in conflict level.")
         logging.debug("Assign {} as conflict lit".format(conflict_lit))
         return conflict_lit
@@ -89,7 +114,7 @@ class CDCL(object):
         if unassigned_lit in self.implication_graph:
             raise Exception("Unassigned lit {} already exists in implication graph.".format(unassigned_lit))
         self.implication_graph[unassigned_lit] = parents
-    def propagate_assignments(self, level):
+    def deduce(self, level):
         new_lit_assigned = True
         while new_lit_assigned:
             new_lit_assigned = False
@@ -111,9 +136,9 @@ class CDCL(object):
         return False, 0
     def assign_lit_from_clause(self, unassigned_lit, clause, level):
         assigned_value = 1 if unassigned_lit > 0 else 0
-        ap = abs(unassigned_lit)
-        logging.debug("Assigning value {} to {} from {}".format(assigned_value, ap, clause))
-        self.assign_ap(ap, level, assigned_value)
+        var = abs(unassigned_lit)
+        logging.debug("Assigning value {} to {} from {}".format(assigned_value, var, clause))
+        self.assign_var(var, level, assigned_value)
     def get_learnt_clause(self, analysing_clause):
         learnt_clause = []
         for lit in analysing_clause:
@@ -134,23 +159,23 @@ class CDCL(object):
         logging.debug("Backtrack to level {}".format(backtrack_level))
         return learnt_clause, backtrack_level
     def backtrack(self, backtrack_level, current_level):
-        forced_assign_ap = self.level_forced_assign_ap_map[backtrack_level] if backtrack_level != 0  else -1
-        forced_assign_ap_value = self.assignments[forced_assign_ap][0] if backtrack_level != 0 else -1
+        forced_assign_var = self.level_forced_assign_var_map[backtrack_level] if backtrack_level != 0  else -1
+        forced_assign_var_value = self.assignments[forced_assign_var][0] if backtrack_level != 0 else -1
         for level in range(backtrack_level, current_level+1):
             if level != 0:
                 logging.debug("Clearing level {}".format(level))
                 assigned_aps = self.level_assignments[level]
-                for ap in assigned_aps:
-                    del self.assignments[ap]
-                    if ap in self.implication_graph:
-                        del self.implication_graph[ap]
-                    if -ap in self.implication_graph:
-                        del self.implication_graph[-ap]
+                for var in assigned_aps:
+                    del self.assignments[var]
+                    if var in self.implication_graph:
+                        del self.implication_graph[var]
+                    if -var in self.implication_graph:
+                        del self.implication_graph[-var]
                 del self.level_assignments[level]
-                del self.level_forced_assign_ap_map[level]
-        return forced_assign_ap, forced_assign_ap_value
+                del self.level_forced_assign_var_map[level]
+        return forced_assign_var, forced_assign_var_value
     def solve(self):
-        self.assign_pure_aps()
+        self.assign_pure_vars()
         level = 0
         all_assigned = False
         sat = True
@@ -159,14 +184,14 @@ class CDCL(object):
                 unit_assignable = self.assign_unit_clause()
                 if not unit_assignable:
                     sat = False
-                conflict, conflict_lit = self.propagate_assignments(level)
+                conflict, conflict_lit = self.deduce(level)
                 if conflict:
                     sat = False
                     break
                 level += 1
-                all_assigned = self.force_assign_ap(level)
+                all_assigned = self.force_assign_var(level)
             else:
-                conflict, conflict_lit = self.propagate_assignments(level)
+                conflict, conflict_lit = self.deduce(level)
                 if conflict:
                     if conflict_lit in self.implication_graph:
                         logging.debug("Before bt Conflict lits in implication graph {}".format(self.implication_graph[conflict_lit]))
@@ -174,17 +199,17 @@ class CDCL(object):
                         logging.debug("Before bt Conflict lits in implication graph {}".format(self.implication_graph[-conflict_lit]))                                        
                     learnt_clause, backtrack_level = self.conflict_analyse(conflict_lit, level)
                     self.formula = [learnt_clause] + self.formula
-                    forced_assign_ap, forced_assign_ap_value = self.backtrack(backtrack_level, level)
+                    forced_assign_var, forced_assign_var_value = self.backtrack(backtrack_level, level)
                     if conflict_lit in self.implication_graph:
                         logging.debug("After bt Conflict lits in implication graph {}".format(self.implication_graph[conflict_lit]))
                     if -conflict_lit in self.implication_graph:
                         logging.debug("After bt Conflict lits in implication graph {}".format(self.implication_graph[-conflict_lit]))                    
                     if backtrack_level != 0:
-                        self._force_assign_ap(forced_assign_ap, backtrack_level, forced_assign_ap_value)
+                        self._force_assign_var(forced_assign_var, backtrack_level, forced_assign_var_value)
                     level = backtrack_level
                 else:
                     level += 1
-                    all_assigned = self.force_assign_ap(level)
+                    all_assigned = self.force_assign_var(level)
         if sat:
             logging.debug("SAT")
         else:

@@ -6,7 +6,7 @@ from collections import deque
 import logging
 
 class DPLL(object):
-    def __init__(self, formula, atomic_props, log_level=None, log_file=None):
+    def __init__(self, formula, atomic_props, log_level=None, log_file=None, branching_heuristic=None):
         self.formula = formula
         self.atomic_props = atomic_props
         self.assignments, self.level_assignments = {}, {}

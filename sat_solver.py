@@ -15,6 +15,7 @@ def add_arguments(parser):
     parser.add_argument("--log-level", type=str, default=None, help="Log level")
     parser.add_argument("--output", type=str, default="output/", help="SAT output")
     parser.add_argument("--solver-name", type=str, default="cdcl", help="Solver's name")
+    parser.add_argument("--branching-heuristic", type=str, default=None, help="Branching heuristic: random|2clause")
 
 def choose_solver(solver_name):
     if solver_name == "cdcl":
@@ -42,7 +43,7 @@ def run_sat_solver_single(configs, input_path):
     input_name = extract_input_name(input_path)
     output_file = format_output_path(configs.output, input_name, ".out")
     log_file = format_output_path(configs.output, input_name, ".log")
-    solver = solver_class(cnf.formula, [x+1 for x in range(cnf.num_props)], configs.log_level, log_file)
+    solver = solver_class(cnf.formula, [x+1 for x in range(cnf.num_props)], configs.log_level, log_file, configs.branching_heuristic)
     sat = solver.solve()
     sat_output = "SAT" if sat else "UNSAT"
     sat_writer.write_output(output_file, sat_output)
