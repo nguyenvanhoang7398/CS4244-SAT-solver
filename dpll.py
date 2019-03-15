@@ -145,6 +145,7 @@ class DPLL(object):
                             break
                     if not backtrackable:
                         sat = False
+                        break
                 else:
                     level += 1
                     all_assigned = self.force_assign_ap(level)

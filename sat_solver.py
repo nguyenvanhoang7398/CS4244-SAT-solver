@@ -4,6 +4,7 @@ from io import SatReader, SatWriter
 from dpll import DPLL
 from cdcl import CDCL
 from simple_dpll import SimpleDPLL
+from cryptosat import CryptoSat
 import os
 
 CONFIGS = None
@@ -27,6 +28,9 @@ def choose_solver(solver_name):
     elif solver_name == "simple_dpll":
         print("Use simple DPLL solver")
         return SimpleDPLL
+    elif solver_name == "cryptosat":
+        print("Use CryptoSat solver")
+        return CryptoSat
     raise ValueError("Unrecognised solver name")
 
 def run_sat_solver(configs):

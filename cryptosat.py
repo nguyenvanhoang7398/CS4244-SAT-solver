@@ -7,6 +7,6 @@ class CryptoSat(object):
         self.solver = Solver()
     def solve(self):
         for clause in self.formula:
-            s.add_clause(clause)
-        sat, assignments = s.solve()
+            self.solver.add_clause(clause)
+        sat, assignments = self.solver.solve()
         return sat
