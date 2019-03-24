@@ -3,8 +3,7 @@ import argparse
 from io import SatReader, SatWriter
 from dpll import DPLL
 from cdcl import CDCL
-from simple_dpll import SimpleDPLL
-from cryptosat import CryptoSat
+# from cryptosat import CryptoSat
 import os
 
 CONFIGS = None
@@ -25,9 +24,6 @@ def choose_solver(solver_name):
     elif solver_name == "dpll":
         print("Use DPLL solver")
         return DPLL
-    elif solver_name == "simple_dpll":
-        print("Use simple DPLL solver")
-        return SimpleDPLL
     elif solver_name == "cryptosat":
         print("Use CryptoSat solver")
         return CryptoSat
@@ -46,7 +42,7 @@ def run_sat_solver_single(configs, input_path):
     solver_class = choose_solver(configs.solver_name)
     input_name = extract_input_name(input_path)
     output_file = format_output_path(configs.output, input_name, ".out")
-    log_file = format_output_path(configs.output, input_name, ".log")
+    log_file = format_output_path(configs.output, input_name, ".log") if configs.log_level else None
     solver = solver_class(cnf.formula, [x+1 for x in range(cnf.num_props)], configs.log_level, log_file, configs.branching_heuristic)
     sat = solver.solve()
     sat_output = "SAT" if sat else "UNSAT"

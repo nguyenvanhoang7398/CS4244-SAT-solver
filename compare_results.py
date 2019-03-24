@@ -1,4 +1,5 @@
 import os
+from pprint import pprint
 
 output_path="outputs/"
 true_solver="output-cdcl-"
@@ -18,5 +19,7 @@ for solver, result in result_map.items():
         if o != result_map[true_solver][i]:
             errors[solver].append(i)
     error_rates[solver] = len(errors[solver])/float(len(result))
-print("Detected errors: {}".format(errors))
-print("Error rates: {}".format(error_rates))
+pprint("Detected errors:")
+pprint(errors)
+pprint("Error rates:")
+pprint(error_rates)

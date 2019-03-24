@@ -1,10 +1,9 @@
 #!/bin/sh
 
-function contains_element {
-  local e match="$1"
-  shift
-  for e; do [[ "$e" == "$match" ]] && echo "true"; done
-  echo "false"
+contains_element() {
+    local e
+    for e in "${@:2}"; do [[ "$e" == "$1" ]] && return 0; done
+    return 1
 }
 
 function format_output () {
@@ -23,6 +22,7 @@ outputs=()
 
 for solver in "${solvers[@]}"
 do
+    echo "${solver}"
     `contains_element "${solver}" "${applied_solvers[@]}"`
     rc=$?
     if [ ${rc} -eq 0 ]; then
