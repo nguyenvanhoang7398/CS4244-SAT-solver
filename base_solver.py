@@ -12,7 +12,7 @@ class BaseSolver(object):
         branching_fn = self.choose_branching_heuristic()
         if shortened:
             formula = self.shorten_formula(formula, assignments)
-        return 0 if len(formula) == 0 else branching_fn(formula, assignments)
+        return 0 if len(formula) == 0 else branching_fn(formula, assignments)[0]
     def compute_val(self, lit, assignments):
         if abs(lit) not in assignments:
             return -1
@@ -46,6 +46,12 @@ class BaseSolver(object):
             return self.heuristic_mams
         if self.branching_heuristic == "jw":
             return self.heuristic_jw
+        if self.branching_heuristic == "up":
+            return self.heuristic_up
+        if self.branching_heuristic == "gup":
+            return self.heuristic_gup
+        if self.branching_heuristic == "sup":
+            return self.heuristic_sup
         return self.heuristic_2clause
     def set_log_level(self, log_level, log_file):
         for handler in logging.root.handlers[:]:
@@ -64,14 +70,14 @@ class BaseSolver(object):
                 var_counts[var] = 0 if var not in var_counts else var_counts[var]
                 var_counts[var] += 1
         return var_counts
-    def heuristic_moms(self, formula, assignments):
+    def heuristic_moms(self, formula, assignments, k=1):
         min_clause_size = min([len(clause) for clause in formula])
         min_formula = [clause for clause in formula if len(clause) == min_clause_size]
-        return self.heuristic_maxo(min_formula, assignments)
-    def heuristic_maxo(self, formula, assignments):
+        return self.heuristic_maxo(min_formula, assignments, k)
+    def heuristic_maxo(self, formula, assignments, k=1):
         var_counts = self.get_var_counts(formula)
-        return var_counts.most_common(1)[0][0] if len(var_counts) > 1 else 0
-    def heuristic_mams(self, formula, assignments):
+        return [s[0] for s in var_counts.most_common(k)]
+    def heuristic_mams(self, formula, assignments, k=1):
         min_clause_size = min([len(clause) for clause in formula])
         min_formula = [clause for clause in formula if len(clause) == min_clause_size]
         moms_counts = self.get_var_counts(min_formula)
@@ -80,33 +86,88 @@ class BaseSolver(object):
         for var, cnt in maxo_counts.items():
             total_cnt = cnt + moms_counts[var] if var in moms_counts else cnt
             total_counts[var] = total_cnt
-        return total_counts.most_common(1)[0][0] if len(total_counts) > 1 else self.heuristic_random(formula, assignments)
-    def heuristic_jw(self, formula, assignments):
-        jw_scores = {}
+        return [s[0] for s in total_counts.most_common(k)]
+    def heuristic_jw(self, formula, assignments, k=1):
+        jw_scores = Counter()
         for clause in formula:
             for lit in clause:
                 var = abs(lit)
                 jw_scores[var] = jw_scores[var] if var in jw_scores else 0
                 jw_scores[var] += 2**(-len(clause))
-        if len(jw_scores) == 0:
-            return 0
-        max_score = max(jw_scores.values())
-        max_score_vars = [var for var in jw_scores.keys() if jw_scores[var] == max_score]
-        return random.choice(max_score_vars)
-    def heuristic_2clause(self, formula, assignments):
-        var_counts_2clause = {}
+        return [s[0] for s in jw_scores.most_common(k)]
+    def heuristic_2clause(self, formula, assignments, k=1):
+        var_counts_2clause = Counter()
         for clause in formula:
             if len(clause) == 2:
                 for lit in clause:
                     var = abs(lit) 
                     var_counts_2clause[var] = var_counts_2clause[var] if var in var_counts_2clause else 0
                     var_counts_2clause[var] += 1
-        if len(var_counts_2clause) == 0:
-            return self.heuristic_random(formula, assignments)
-        max_count = max(var_counts_2clause.values())
-        most_occuring_vars = [var for var in var_counts_2clause.keys() if var_counts_2clause[var] == max_count]
-        return random.choice(most_occuring_vars)
+        return self.heuristic_random(formula, assignments) if len(var_counts_2clause) == 0 else [s[0] for s in var_counts_2clause.most_common(k)]
+    def resolve_by_lit(self, formula, lit):
+        resolved_formula = []
+        for clause in formula:
+            if -lit in clause:
+                resolved_clause = [literal for literal in clause if literal != -lit]
+                if len(resolved_clause) == 0:
+                    return resolved_formula, [lit], True
+                resolved_formula.append(resolved_clause)
+            elif lit not in clause:
+                resolved_formula.append(clause)
+        return resolved_formula, [lit], False 
+    def get_num_unit_propagation(self, formula, lit):
+        num_unit_propagations = 0
+        resolving_lits = [lit]
+        resolved_formula = formula
+        result_code = 0
+        while len(resolving_lits) > 0:
+            resolving_lit = resolving_lits.pop()
+            resolved_formula, _, unsat = self.resolve_by_lit(resolved_formula, resolving_lit)
+            if unsat:
+                result_code = -1
+                break
+            if len(resolved_formula) == 0:
+                result_code = 1
+                break
+            unit_lits = self.get_unit_lits(resolved_formula)
+            num_unit_propagations += len(unit_lits)
+            resolving_lits = unit_lits + resolving_lits
+            resolving_lits = list(set(resolving_lits))
+        return num_unit_propagations, result_code
+    def get_unit_lits(self, formula):
+        return [clause[0] for clause in formula if len(clause) == 1]
+    def heuristic_up(self, formula, assignments, k=1):
+        assigned_vars = assignments.keys()
+        unassigned_vars = [var for var in self.atomic_props if var not in assigned_vars]
+        return self._heuristic_up(formula, unassigned_vars, k)
+    def _heuristic_up(self, formula, vars, k=1):
+        var_up_map = Counter()
+        for var in vars:
+            num_up_from_var, _ = self.get_num_unit_propagation(formula, var)
+            num_up_from_neg_var, _ = self.get_num_unit_propagation(formula, -var)
+            var_up_map[var] = num_up_from_var + num_up_from_neg_var            
+        return [s[0] for s in var_up_map.most_common(k)]
+    def heuristic_gup(self, formula, assignments, k=1):
+        assigned_vars = assignments.keys()
+        unassigned_vars = [var for var in self.atomic_props if var not in assigned_vars]
+        var_up_map = Counter()
+        for var in unassigned_vars:
+            num_up_from_var, status_code = self.get_num_unit_propagation(formula, var)
+            if status_code != 0:
+                return [var]
+            num_up_from_neg_var, status_code = self.get_num_unit_propagation(formula, -var)
+            if status_code != 0:
+                return [var]
+            var_up_map[var] = num_up_from_var + num_up_from_neg_var
+        return [s[0] for s in var_up_map.most_common(k)]
+    def heuristic_sup(self, formula, assignments, k=4):
+        top_k_maxo = self.heuristic_maxo(formula, assignments, k)
+        top_k_moms = self.heuristic_moms(formula, assignments, k)
+        top_k_mams = self.heuristic_mams(formula, assignments, k)
+        top_k_jw = self.heuristic_jw(formula, assignments, k)
+        top_k = [x[0] for x in Counter(top_k_maxo + top_k_moms + top_k_mams + top_k_jw).most_common(k)]
+        return self._heuristic_up(formula, top_k)
     def heuristic_random(self, formula, assignments):
         assigned_vars = assignments.keys()
         unassigned_vars = [var for var in self.atomic_props if var not in assigned_vars]
-        return 0 if len(unassigned_vars) == 0 else random.choice(unassigned_vars)
+        return [random.choice(unassigned_vars)]

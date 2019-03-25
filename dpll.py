@@ -20,38 +20,25 @@ class DPLL(BaseSolver):
         pure_lits = [lit for lit, _ in lit_counts.items() if -lit not in lit_counts]
         logging.debug("Pure aps in formula {}: {}".format(formula, pure_lits))
         return pure_lits
-    def resolve_by_ap(self, formula, ap):
-        resolved_formula = []
-        for clause in formula:
-            if -ap in clause:
-                resolved_clause = [literal for literal in clause if literal != -ap]
-                if len(resolved_clause) == 0:
-                    return resolved_formula, [ap], True
-                resolved_formula.append(resolved_clause)
-            elif ap not in clause:
-                resolved_formula.append(clause)
-        return resolved_formula, [ap], False
     def resolve_by_pure_aps(self, formula):
         pure_aps = self.get_pure_lits(formula)
         for pure_ap in pure_aps:
-            formula, _, unsat = self.resolve_by_ap(formula, pure_ap)
+            formula, _, unsat = self.resolve_by_lit(formula, pure_ap)
             if unsat:
                 raise Exception("Resolving pure ap should not return UNSAT")
         return formula, pure_aps, False
-    def get_single_ap_clauses(self, formula):
-        return [clause for clause in formula if len(clause) == 1]
     def resolve_by_unit_propagation(self, formula):
         assignments = []
-        single_ap_clauses = self.get_single_ap_clauses(formula)
+        single_ap_clauses = self.get_unit_lits(formula)
         while len(single_ap_clauses) > 0:
-            ap = single_ap_clauses[0][0]
-            formula, _, unsat = self.resolve_by_ap(formula, ap)
+            ap = single_ap_clauses[0]
+            formula, _, unsat = self.resolve_by_lit(formula, ap)
             if unsat:
                 return formula, [], True
             if not formula:
                 return formula, assignments, False
             assignments.append(ap)
-            single_ap_clauses = self.get_single_ap_clauses(formula)
+            single_ap_clauses = self.get_unit_lits(formula)
         return formula, assignments, False
     def debug_msg(self, level, task, formula, assignments, unsat):
         logging.debug("Level {}, resolution by {}:".format(level, task))
@@ -78,7 +65,7 @@ class DPLL(BaseSolver):
             return formula, assignments, False
         next_ap = self.assign_next_var(formula, assignments)
         logging.debug("Assigning next ap: {}".format(next_ap))
-        tmp_formula, tmp_assignments, unsat = self.resolve_by_ap(formula, next_ap)
+        tmp_formula, tmp_assignments, unsat = self.resolve_by_lit(formula, next_ap)
         self.debug_msg(level, "assigning {}".format(next_ap), tmp_formula, self.add_to_assignments(assignments, tmp_assignments), unsat)
         if unsat:
             raise Exception("Resolving an ap after all unit clauses have been resolved should not return UNSAT")
@@ -86,7 +73,7 @@ class DPLL(BaseSolver):
         self.debug_msg(level, "solving", tmp_formula, tmp_assignments, unsat)
         if unsat:
             logging.debug("Assigning {} as next ap returns UNSAT, start backtracking".format(next_ap))
-            tmp_formula, tmp_assignments, unsat = self.resolve_by_ap(formula, -next_ap)
+            tmp_formula, tmp_assignments, unsat = self.resolve_by_lit(formula, -next_ap)
             self.debug_msg(level, "assigning {}".format(next_ap), tmp_formula, self.add_to_assignments(assignments, tmp_assignments), unsat)
             if unsat:
                 raise Exception("Resolving an ap after all unit clauses have been resolved should not return UNSAT")
