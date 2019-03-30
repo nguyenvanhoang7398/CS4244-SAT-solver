@@ -171,3 +171,8 @@ class BaseSolver(object):
         assigned_vars = assignments.keys()
         unassigned_vars = [var for var in self.atomic_props if var not in assigned_vars]
         return [random.choice(unassigned_vars)]
+    def heuristic_ordered(self, formula, assignments):
+        for var in self.atomic_props:
+            if var not in assignments:
+                return [var]
+        return [0]

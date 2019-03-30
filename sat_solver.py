@@ -3,7 +3,7 @@ import argparse
 from io import SatReader, SatWriter
 from dpll import DPLL
 from cdcl import CDCL
-from cryptosat import CryptoSat
+# from cryptosat import CryptoSat
 import os
 
 CONFIGS = None

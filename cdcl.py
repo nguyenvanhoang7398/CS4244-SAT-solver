@@ -13,6 +13,8 @@ class CDCL(BaseSolver):
         super(CDCL, self).__init__(formula, atomic_props, log_level, log_file, branching_heuristic)
         self.assignments, self.level_assignments = {}, {}
         self.implication_graph, self.level_forced_assign_var_map = {}, {}
+        self.init_var_clause_map(atomic_props)
+        self.newly_assigned_vars = []
     def set_log_level(self, log_level, log_file):
         for handler in logging.root.handlers[:]:
             logging.root.removeHandler(handler)
@@ -22,6 +24,13 @@ class CDCL(BaseSolver):
                 logging.basicConfig(filename=log_file, filemode='w', level=logging.DEBUG)
             else:
                 logging.basicConfig(level=logging.DEBUG)
+    def init_var_clause_map(self, atomic_props):
+        self.var_clause_map = {}
+        for clause in self.formula:
+            for lit in clause:
+                if abs(lit) not in self.var_clause_map:
+                    self.var_clause_map[abs(lit)] = []
+                self.var_clause_map[abs(lit)].append(clause)
     def compute_ap_assignment_value(self, lit):
         return 1 if lit > 0 else 0
     def assign_var(self, var, level, value):
@@ -41,6 +50,7 @@ class CDCL(BaseSolver):
                 assignable = self.assign_var(abs(lit), 0, self.compute_ap_assignment_value(lit))
                 if not assignable:
                     return False
+                self.update_newly_assigned_vars([abs(lit)], False)
         return True
     def _force_assign_var(self, var, level, value):
         self.assign_var(var, level, value)
@@ -48,12 +58,12 @@ class CDCL(BaseSolver):
     def force_assign_var(self, level):
         next_var = self.assign_next_var(self.formula, self.assignments, True)
         if next_var == 0:
-            return True
+            return True, next_var
         logging.debug("Force assign {} as 1 at level {}".format(next_var, level))
         if level not in self.level_assignments:
             self.level_assignments[level] = []
         self._force_assign_var(next_var, level, 1)
-        return False    
+        return False, next_var    
     def assign_pure_vars(self):
         lit_counts = {}
         for clause in self.formula:
@@ -79,25 +89,29 @@ class CDCL(BaseSolver):
         if unassigned_lit in self.implication_graph:
             raise Exception("Unassigned lit {} already exists in implication graph.".format(unassigned_lit))
         self.implication_graph[unassigned_lit] = parents
+    def update_newly_assigned_vars(self, vars, force):
+        if force:
+            self.newly_assigned_vars = vars
+        else:
+            self.newly_assigned_vars = vars + self.newly_assigned_vars
+        logging.debug("Newly assigned vars {}".format(self.newly_assigned_vars))
     def deduce(self, level):
-        new_lit_assigned = True
-        while new_lit_assigned:
-            new_lit_assigned = False
-            for clause in self.formula:
+        while len(self.newly_assigned_vars) > 0:
+            formula = self.var_clause_map[self.newly_assigned_vars.pop()]
+            logging.debug("Formula of newly assigned vars {}".format(formula))
+            for clause in formula:
                 clause_values = [self.compute_val(lit, self.assignments) for lit in clause]
                 if 1 in clause_values:
                     continue
                 if -1 not in clause_values:
                     logging.debug("Conflict detected in clause {}".format(clause))
-                    # conflict_lit = self.assign_conflict_lit(clause, level)
                     self.update_implication_graph(0, clause)
                     return True
                 if sum(clause_values) == -1:
                     unassigned_lit = clause[clause_values.index(-1)]
                     self.assign_lit_from_clause(unassigned_lit, clause, level)
                     self.update_implication_graph(unassigned_lit, [-lit for lit in clause if lit != unassigned_lit])
-                    new_lit_assigned = True
-                    break
+                    self.update_newly_assigned_vars([abs(unassigned_lit)], False)
         return False
     def assign_lit_from_clause(self, unassigned_lit, clause, level):
         assigned_value = 1 if unassigned_lit > 0 else 0
@@ -149,6 +163,10 @@ class CDCL(BaseSolver):
                 del self.level_forced_assign_var_map[level]
         del self.implication_graph[0]
         return forced_assign_var, forced_assign_var_value
+    def update_learnt_clause(self, learnt_clause):
+        self.formula.append(learnt_clause)
+        for lit in learnt_clause:
+            self.var_clause_map[abs(lit)].append(learnt_clause)
     def solve(self):
         self.assign_pure_vars()
         level = 0
@@ -165,19 +183,23 @@ class CDCL(BaseSolver):
                     sat = False
                     break
                 level += 1
-                all_assigned = self.force_assign_var(level)
+                all_assigned, next_var = self.force_assign_var(level)
+                self.update_newly_assigned_vars([next_var], False)
             else:
                 conflict = self.deduce(level)
                 if conflict:
                     learnt_clause, backtrack_level = self.conflict_analyse(level)
-                    self.formula = [learnt_clause] + self.formula
+                    self.update_learnt_clause(learnt_clause)
                     forced_assign_var, forced_assign_var_value = self.backtrack(backtrack_level, level)
+                    self.update_newly_assigned_vars([abs(lit) for lit in learnt_clause], True)
                     if backtrack_level != 0:
                         self._force_assign_var(forced_assign_var, backtrack_level, forced_assign_var_value)
+                        self.update_newly_assigned_vars([forced_assign_var], False)
                     level = backtrack_level
                 else:
                     level += 1
-                    all_assigned = self.force_assign_var(level)
+                    all_assigned, next_var = self.force_assign_var(level)
+                    self.update_newly_assigned_vars([next_var], False)
         if sat:
             logging.debug("SAT")
         else:
