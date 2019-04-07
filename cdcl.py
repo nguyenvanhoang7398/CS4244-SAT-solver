@@ -95,20 +95,27 @@ class CDCL(BaseSolver):
         else:
             self.newly_assigned_vars = vars + self.newly_assigned_vars
         logging.debug("Newly assigned vars {}".format(self.newly_assigned_vars))
+    def check_clause_status(self, var, i):
+        clause = self.var_clause_map[var][i]
+        clause_values = [self.compute_val(lit, self.assignments) for lit in clause]
+        if 1 not in clause_values:  
+            if -1 not in clause_values:
+                logging.debug("Conflict detected in clause {}".format(clause))
+                return "conflict", clause, 0
+            if sum(clause_values) == -1:
+                unassigned_lit = clause[clause_values.index(-1)]
+                return "unit", clause, unassigned_lit
+        return "sat-unassaigned", [], 0
     def deduce(self, level):
         while len(self.newly_assigned_vars) > 0:
-            formula = self.var_clause_map[self.newly_assigned_vars.pop()]
-            logging.debug("Formula of newly assigned vars {}".format(formula))
-            for clause in formula:
-                clause_values = [self.compute_val(lit, self.assignments) for lit in clause]
-                if 1 in clause_values:
-                    continue
-                if -1 not in clause_values:
-                    logging.debug("Conflict detected in clause {}".format(clause))
+            var = self.newly_assigned_vars.pop()
+            logging.debug("Formula of newly assigned vars {}".format(self.var_clause_map[var]))
+            for i in range(len(self.var_clause_map[var])):
+                status, clause, unassigned_lit = self.check_clause_status(var, i)
+                if status == "conflict":
                     self.update_implication_graph(0, clause)
                     return True
-                if sum(clause_values) == -1:
-                    unassigned_lit = clause[clause_values.index(-1)]
+                if status == "unit":
                     self.assign_lit_from_clause(unassigned_lit, clause, level)
                     self.update_implication_graph(unassigned_lit, [-lit for lit in clause if lit != unassigned_lit])
                     self.update_newly_assigned_vars([abs(unassigned_lit)], False)
@@ -167,7 +174,7 @@ class CDCL(BaseSolver):
         self.formula.append(learnt_clause)
         for lit in learnt_clause:
             self.var_clause_map[abs(lit)].append(learnt_clause)
-    def solve(self):
+    def solve_sat(self):
         self.assign_pure_vars()
         level = 0
         all_assigned = False

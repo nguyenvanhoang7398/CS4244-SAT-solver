@@ -1,6 +1,8 @@
 import logging
 import random
 from collections import Counter
+import datetime
+from metrics import Metrics
 
 class BaseSolver(object):
     def __init__(self, formula, atomic_props, log_level=None, log_file=None, branching_heuristic=None):
@@ -8,7 +10,9 @@ class BaseSolver(object):
         self.atomic_props = atomic_props
         self.set_log_level(log_level, log_file)
         self.branching_heuristic = branching_heuristic
+        self.pick_branching_num = 0
     def assign_next_var(self, formula, assignments, shortened=False):
+        self.pick_branching_num += 1
         branching_fn = self.choose_branching_heuristic()
         if shortened:
             formula = self.shorten_formula(formula, assignments)
@@ -176,3 +180,11 @@ class BaseSolver(object):
             if var not in assignments:
                 return [var]
         return [0]
+    def solve_sat(self):
+        return random.choice([True, False])
+    def solve(self):
+        start_time = datetime.datetime.now()
+        sat = self.solve_sat()
+        exec_time = (datetime.datetime.now() - start_time).total_seconds()
+        pick_branching_num = self.pick_branching_num
+        return Metrics(sat, exec_time, pick_branching_num)

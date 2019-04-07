@@ -6,8 +6,6 @@ from base_solver import BaseSolver
 import copy
 
 class DPLL(BaseSolver):
-    def __init__(self, formula, atomic_props, log_level=None, log_file=None, branching_heuristic=None):
-        super(DPLL, self).__init__(formula, atomic_props, log_level, log_file, branching_heuristic)
     def get_lit_counts(self, formula):
         ap_counts = {}
         for clause in formula:
@@ -80,7 +78,7 @@ class DPLL(BaseSolver):
             tmp_formula, tmp_assignments, unsat = self._solve(level+1, tmp_formula, self.add_to_assignments(assignments, [-next_ap]))
             self.debug_msg(level, "solving an ap", tmp_formula, tmp_assignments, unsat)
         return tmp_formula, tmp_assignments, unsat
-    def solve(self):
+    def solve_sat(self):
         assignments = {}
         _, assignments, unsat = self._solve(0, self.formula, assignments)
         sat = not unsat

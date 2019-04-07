@@ -32,22 +32,17 @@ do
             output_path=`format_output ${solver} ${heuristic}`
             rm -rf ${output_path}
             mkdir ${output_path}
-            _execution_start_time=$SECONDS
             python sat_solver.py --solver ${solver-name} \
             cdcl --log-level ${log_level} --input ${input_path} \
-            --branching-heuristic ${heuristic} --output ${output_path}
-            _elapsed=$(($SECONDS - ${_execution_start_time}))
-            echo "${output_path} ${_elapsed}" >> ${result_path}
+            --branching-heuristic ${heuristic} --output ${output_path} \
+            --result ${result_path}
             outputs+=('${output_path}')
         done
     fi
     output_path=`format_output ${solver} ""`
     rm -rf ${output_path}
     mkdir ${output_path}
-    _execution_start_time=$SECONDS
     python sat_solver.py --solver ${solver-name} \
     cdcl --log-level ${log_level} --input ${input_path} \
-    --output ${output_path}
-    _elapsed=$(($SECONDS - ${_execution_start_time}))
-    echo "${output_path} ${_elapsed}" >> ${result_path}
+    --output ${output_path} --result ${result_path}
 done

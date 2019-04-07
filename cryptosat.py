@@ -1,12 +1,10 @@
 from pycryptosat import Solver
+from base_solver import BaseSolver
 
-class CryptoSat(object):
-    def __init__(self, formula, atomic_props):
-        self.formula = formula
-        self.atomic_props = atomic_props
-        self.solver = Solver()
-    def solve(self):
+class CryptoSat(BaseSolver):
+    def solve_sat(self):
+        solver = Solver()
         for clause in self.formula:
-            self.solver.add_clause(clause)
-        sat, assignments = self.solver.solve()
+            solver.add_clause(clause)
+        sat, assignments = solver.solve()
         return sat
