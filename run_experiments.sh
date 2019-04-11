@@ -7,7 +7,7 @@ contains_element() {
 }
 
 function format_output () {
-    echo "${output_dir}/output-$1-$2"
+    echo "${output_dir}/output-$1-$2-$3"
 }
 
 config_file="sat_solver.conf"
@@ -18,8 +18,6 @@ touch ${result_path}
 rm -rf ${output_dir}
 mkdir ${output_dir}
 
-outputs=()
-
 for solver in "${solvers[@]}"
 do
     echo "${solver}"
@@ -29,17 +27,27 @@ do
         for heuristic in "${heuristics[@]}"
         do
             echo ${heuristic}
-            output_path=`format_output ${solver} ${heuristic}`
+            for model in "${models[@]}"
+            do
+                echo ${model}
+                output_path=`format_output ${solver} ${heuristic} ${model}`
+                rm -rf ${output_path}
+                mkdir ${output_path}
+                python sat_solver.py --solver ${solver-name} \
+                cdcl --log-level ${log_level} --input ${input_path} \
+                --branching-heuristic ${heuristic} --output ${output_path} \
+                --result ${result_path} --model-name ${model}
+            done
+            output_path=`format_output ${solver} ${heuristic} ""`
             rm -rf ${output_path}
             mkdir ${output_path}
             python sat_solver.py --solver ${solver-name} \
             cdcl --log-level ${log_level} --input ${input_path} \
             --branching-heuristic ${heuristic} --output ${output_path} \
             --result ${result_path}
-            outputs+=('${output_path}')
         done
     fi
-    output_path=`format_output ${solver} ""`
+    output_path=`format_output ${solver} "" ""`
     rm -rf ${output_path}
     mkdir ${output_path}
     python sat_solver.py --solver ${solver-name} \

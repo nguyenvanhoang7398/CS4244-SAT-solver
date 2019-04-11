@@ -2,35 +2,31 @@ from cdcl import CDCL
 import logging
 
 class CDCL_WL(CDCL):
-    def __init__(self, formula, atomic_props, log_level=None, log_file=None, branching_heuristic=None):
-        super(CDCL_WL, self).__init__(formula, atomic_props, log_level, log_file, branching_heuristic)
-        self.init_wl_refs()
-    def init_wl_refs(self):
-        self.wl_refs = {}
-        for clause in self.formula:
-            for lit in clause:
-                if abs(lit) not in self.wl_refs:
-                    self.wl_refs[abs(lit)] = []
-                self.wl_refs[abs(lit)].append([0, len(clause)-1])
+    def __init__(self, formula, atomic_props, log_level=None, log_file=None, branching_heuristic=None, model_path=None):
+        super(CDCL_WL, self).__init__(formula, atomic_props, log_level, log_file, branching_heuristic, model_path)
+        self.init_hash_refs_map()
+    def init_hash_refs_map(self):
+        # self.wl_refs = {}
+        self.hash_refs_map = {}
+        for clause_hash, clause in self.hash_clause_map.items():
+            self.hash_refs_map[clause_hash] = [0, len(clause)-1]
+        # for clause in self.formula:
+        #     for lit in clause:
+        #         if abs(lit) not in self.wl_refs:
+        #             self.wl_refs[abs(lit)] = []
+        #         self.wl_refs[abs(lit)].append([0, len(clause)-1])
     def update_learnt_clause(self, learnt_clause):
+        clause_hash = self.hash_clause(learnt_clause)
+        self.hash_clause_map[clause_hash] = learnt_clause
         self.formula.append(learnt_clause)
         for lit in learnt_clause:
-            self.var_clause_map[abs(lit)].append(learnt_clause)
-            self.wl_refs[abs(lit)].append([0, len(learnt_clause)-1])
-    def check_clause_status_old(self, var, i):
-        clause = self.var_clause_map[var][i]
-        clause_values = [self.compute_val(lit, self.assignments) for lit in clause]
-        if 1 not in clause_values:  
-            if -1 not in clause_values:
-                logging.debug("Conflict detected in clause {}".format(clause))
-                return "conflict", clause, 0
-            if sum(clause_values) == -1:
-                unassigned_lit = clause[clause_values.index(-1)]
-                return "unit", clause, unassigned_lit
-        return "sat-unassaigned", [], 0
+            # self.var_clause_map[abs(lit)].append(learnt_clause)
+            self.var_hash_map[abs(lit)].append(clause_hash)
+        self.hash_refs_map[clause_hash] = [0, len(learnt_clause)-1]
     def check_clause_status(self, var, i):
-        refs = self.wl_refs[var][i]
-        clause = self.var_clause_map[var][i]
+        clause_hash = self.var_hash_map[var][i]
+        refs = self.hash_refs_map[clause_hash]
+        clause = self.get_involved_clauses(var)[i]
         return self._check_clause_status(refs, refs[0], refs[1], clause)
     def _check_clause_status(self, refs, start_ref0, start_ref1, clause):
         val_ref0 = self.compute_val(clause[refs[0]], self.assignments)
@@ -57,6 +53,7 @@ class CDCL_WL(CDCL):
             return self._check_clause_status(refs, start_ref0, start_ref1, clause)
         if val_ref0 == 0 and val_ref1 == 0:
             if (refs[0] + 1) % clause_size == start_ref0:
+                logging.debug("Conflict detected in clause {}".format(clause))
                 return "conflict", clause, 0
             refs[0] = (refs[0] + 1) % clause_size
             return self._check_clause_status(refs, start_ref0, start_ref1, clause)

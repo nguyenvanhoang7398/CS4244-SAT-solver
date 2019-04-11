@@ -2,7 +2,7 @@ import os
 from pprint import pprint
 
 output_path="outputs/"
-true_solver="output-dpll-"
+true_solver="output-dpll--"
 
 result_map = {}
 for solver in os.listdir(output_path):

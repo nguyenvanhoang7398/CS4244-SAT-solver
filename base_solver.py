@@ -3,20 +3,39 @@ import random
 from collections import Counter
 import datetime
 from metrics import Metrics
+import pickle
+from ml_utils import build_features
 
 class BaseSolver(object):
-    def __init__(self, formula, atomic_props, log_level=None, log_file=None, branching_heuristic=None):
+    def __init__(self, formula, atomic_props, log_level=None, log_file=None, branching_heuristic=None, model_path=None):
         self.formula = formula
         self.atomic_props = atomic_props
         self.set_log_level(log_level, log_file)
         self.branching_heuristic = branching_heuristic
         self.pick_branching_num = 0
+        self.load_model(model_path)
+    def hash_clause(self, clause):
+        return "#".join([str(lit) for lit in clause])
+    def load_model(self, model_path):
+        if model_path is None:
+            self.model = None
+        else:
+            self.model = pickle.load(open(model_path, "rb"))
+    def get_assign_value(self, next_var):
+        if self.model is None:
+            return 1
+        features = build_features(self.get_involved_clauses(next_var), next_var)
+        predicted_val = self.model.predict(features)
+        logging.debug("Assigning {} to {}".format(next_var, predicted_val))
+        return predicted_val
     def assign_next_var(self, formula, assignments, shortened=False):
         self.pick_branching_num += 1
         branching_fn = self.choose_branching_heuristic()
         if shortened:
             formula = self.shorten_formula(formula, assignments)
-        return 0 if len(formula) == 0 else branching_fn(formula, assignments)[0]
+        next_var = 0 if len(formula) == 0 else branching_fn(formula, assignments)[0]
+        logging.debug("Assign {} next at #{}".format(next_var, self.pick_branching_num))
+        return next_var
     def compute_val(self, lit, assignments):
         if abs(lit) not in assignments:
             return -1
@@ -38,6 +57,8 @@ class BaseSolver(object):
                 shortened_formula.append(shortened_clause)
         return shortened_formula
     def choose_branching_heuristic(self):
+        if self.branching_heuristic == "order":
+            return self.heuristic_ordered
         if self.branching_heuristic == "random":
             return self.heuristic_random
         if self.branching_heuristic == "2clause":

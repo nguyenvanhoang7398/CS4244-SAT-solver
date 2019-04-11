@@ -6,6 +6,8 @@ from base_solver import BaseSolver
 import copy
 
 class DPLL(BaseSolver):
+    def get_assign_value(self, next_var):
+        return 1
     def get_lit_counts(self, formula):
         ap_counts = {}
         for clause in formula:
@@ -46,7 +48,7 @@ class DPLL(BaseSolver):
     def add_to_assignments(self, assignments, lits):
         copied_assignments = copy.deepcopy(assignments)
         for lit in lits:
-            copied_assignments[lit] = 1 if lit > 0 else 0
+            copied_assignments[abs(lit)] = 1 if lit > 0 else 0
         return copied_assignments
     def _solve(self, level, formula, assignments={}):
         formula, pure_aps, unsat = self.resolve_by_pure_aps(formula)
@@ -62,20 +64,21 @@ class DPLL(BaseSolver):
         if not formula:
             return formula, assignments, False
         next_ap = self.assign_next_var(formula, assignments)
-        logging.debug("Assigning next ap: {}".format(next_ap))
-        tmp_formula, tmp_assignments, unsat = self.resolve_by_lit(formula, next_ap)
-        self.debug_msg(level, "assigning {}".format(next_ap), tmp_formula, self.add_to_assignments(assignments, tmp_assignments), unsat)
+        next_lit = next_ap if self.get_assign_value(next_ap) == 1 else -next_ap
+        logging.debug("Assigning next ap: {}".format(next_lit))
+        tmp_formula, tmp_assignments, unsat = self.resolve_by_lit(formula, next_lit)
+        self.debug_msg(level, "assigning {}".format(next_lit), tmp_formula, self.add_to_assignments(assignments, tmp_assignments + [next_lit]), unsat)
         if unsat:
             raise Exception("Resolving an ap after all unit clauses have been resolved should not return UNSAT")
-        tmp_formula, tmp_assignments, unsat = self._solve(level+1, tmp_formula, self.add_to_assignments(assignments, [next_ap]))
+        tmp_formula, tmp_assignments, unsat = self._solve(level+1, tmp_formula, self.add_to_assignments(assignments, [next_lit]))
         self.debug_msg(level, "solving", tmp_formula, tmp_assignments, unsat)
         if unsat:
-            logging.debug("Assigning {} as next ap returns UNSAT, start backtracking".format(next_ap))
-            tmp_formula, tmp_assignments, unsat = self.resolve_by_lit(formula, -next_ap)
-            self.debug_msg(level, "assigning {}".format(next_ap), tmp_formula, self.add_to_assignments(assignments, tmp_assignments), unsat)
+            logging.debug("Assigning {} as next ap returns UNSAT, start backtracking".format(next_lit))
+            tmp_formula, tmp_assignments, unsat = self.resolve_by_lit(formula, -next_lit)
+            self.debug_msg(level, "assigning {}".format(-next_lit), tmp_formula, self.add_to_assignments(assignments, tmp_assignments + [-next_lit]), unsat)
             if unsat:
                 raise Exception("Resolving an ap after all unit clauses have been resolved should not return UNSAT")
-            tmp_formula, tmp_assignments, unsat = self._solve(level+1, tmp_formula, self.add_to_assignments(assignments, [-next_ap]))
+            tmp_formula, tmp_assignments, unsat = self._solve(level+1, tmp_formula, self.add_to_assignments(assignments, [-next_lit]))
             self.debug_msg(level, "solving an ap", tmp_formula, tmp_assignments, unsat)
         return tmp_formula, tmp_assignments, unsat
     def solve_sat(self):
