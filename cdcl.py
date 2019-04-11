@@ -25,16 +25,16 @@ class CDCL(BaseSolver):
             else:
                 logging.basicConfig(level=logging.DEBUG)
     def init_var_clause_map(self, atomic_props):
-        # self.var_clause_map = {}
         self.hash_clause_map = {}
-        self.var_hash_map = {}
+        self.lit_hash_map = {}
         for clause in self.formula:
             self.hash_clause_map[self.hash_clause(clause)] = clause
         for var in self.atomic_props:
-            self.var_hash_map[var] = []
+            self.lit_hash_map[var] = []
+            self.lit_hash_map[-var] = []
         for clause in self.formula:
             for lit in clause:
-                self.var_hash_map[abs(lit)].append(self.hash_clause(clause))
+                self.lit_hash_map[lit].append(self.hash_clause(clause))
     def compute_ap_assignment_value(self, lit):
         return 1 if lit > 0 else 0
     def assign_var(self, var, level, value):
@@ -105,12 +105,10 @@ class CDCL(BaseSolver):
                 if v not in self.newly_assigned_vars:
                     self.newly_assigned_vars = [v] + self.newly_assigned_vars
         logging.debug("Newly assigned vars {}".format(self.newly_assigned_vars))
-    def get_involved_clauses(self, var):
-        return [self.hash_clause_map[h] for h in self.var_hash_map[var]]
-    def check_clause_status(self, var, i):
-        # clause_hash = self.var_hash_map[var][i]
-        clause = self.get_involved_clauses(var)[i]
-        # clause = self.var_clause_map[var][i]
+    def get_involved_clauses(self, lit):
+        return [self.hash_clause_map[h] for h in self.lit_hash_map[lit]]
+    def check_clause_status(self, lit, i):
+        clause = self.get_involved_clauses(lit)[i]
         clause_values = [self.compute_val(lit, self.assignments) for lit in clause]
         if 1 not in clause_values:  
             if -1 not in clause_values:
@@ -119,13 +117,34 @@ class CDCL(BaseSolver):
             if sum(clause_values) == -1:
                 unassigned_lit = clause[clause_values.index(-1)]
                 return "unit", clause, unassigned_lit
-        return "sat-unassaigned", [], 0
+            return "unassaigned", [], 0
+        return "sat", [], 0
+    def check_and_assign_pure_lit(self, lit, source_var, level):
+        all_pos_clause_is_sat = True
+        for i in range(len(self.get_involved_clauses(lit))):
+            status, clause, unassigned_lit = self.check_clause_status(lit, i)
+            if status != "sat":
+                all_pos_clause_is_sat = False
+        if all_pos_clause_is_sat:
+            self.assign_lit_from_clause(-lit, [source_var], level)
+            self.update_newly_assigned_vars([abs(lit)], False)
+            return
+        all_neg_clause_is_sat = True
+        for i in range(len(self.get_involved_clauses(-lit))):
+            status, clause, unassigned_lit = self.check_clause_status(-lit, i)
+            if status != "sat":
+                all_neg_clause_is_sat = False
+        if all_neg_clause_is_sat:
+            self.assign_lit_from_clause(lit, [source_var], level)
+            self.update_newly_assigned_vars([abs(lit)], False)
     def deduce(self, level):
         while len(self.newly_assigned_vars) > 0:
             var = self.newly_assigned_vars.pop()
+            true_lit = var if self.assignments[var][0] > 0 else -var
+            false_lit = -true_lit
             logging.debug("Formula of newly assigned vars {}".format(self.get_involved_clauses(var)))
-            for i in range(len(self.get_involved_clauses(var))):
-                status, clause, unassigned_lit = self.check_clause_status(var, i)
+            for i in range(len(self.get_involved_clauses(false_lit))):
+                status, clause, unassigned_lit = self.check_clause_status(false_lit, i)
                 if status == "conflict":
                     self.update_implication_graph(0, clause)
                     return True
@@ -133,6 +152,12 @@ class CDCL(BaseSolver):
                     self.assign_lit_from_clause(unassigned_lit, clause, level)
                     self.update_implication_graph(unassigned_lit, [-lit for lit in clause if lit != unassigned_lit])
                     self.update_newly_assigned_vars([abs(unassigned_lit)], False)
+            checked_pure_vars = []
+            for clause in self.get_involved_clauses(true_lit):
+                for lit in clause:
+                    if abs(lit) not in checked_pure_vars and abs(lit) not in self.assignments:
+                            self.check_and_assign_pure_lit(lit, var, level)
+                            checked_pure_vars.append(abs(lit))
         return False
     def assign_lit_from_clause(self, unassigned_lit, clause, level):
         assigned_value = 1 if unassigned_lit > 0 else 0
@@ -189,10 +214,9 @@ class CDCL(BaseSolver):
         self.hash_clause_map[clause_hash] = learnt_clause
         self.formula.append(learnt_clause)
         for lit in learnt_clause:
-            # self.var_clause_map[abs(lit)].append(learnt_clause)
-            self.var_hash_map[abs(lit)].append(clause_hash)
+            self.lit_hash_map[lit].append(clause_hash)
     def solve_sat(self):
-        # self.assign_pure_vars()
+        self.assign_pure_vars()
         level = 0
         all_assigned = False
         sat = True
@@ -215,10 +239,13 @@ class CDCL(BaseSolver):
                     learnt_clause, backtrack_level = self.conflict_analyse(level)
                     self.update_learnt_clause(learnt_clause)
                     forced_assign_var, forced_assign_var_value = self.backtrack(backtrack_level, level)
-                    self.update_newly_assigned_vars([abs(lit) for lit in learnt_clause], True)
                     if backtrack_level != 0:
                         self._force_assign_var(forced_assign_var, backtrack_level, forced_assign_var_value)
-                        self.update_newly_assigned_vars([forced_assign_var], False)
+                        self.update_newly_assigned_vars([forced_assign_var], True)
+                    else:
+                        single_lit = learnt_clause[0]
+                        self.assign_var(abs(single_lit), 0, 1 if single_lit > 0 else 0)
+                        self.update_newly_assigned_vars([abs(single_lit)], True)
                     level = backtrack_level
                 else:
                     level += 1

@@ -24,7 +24,8 @@ class BaseSolver(object):
     def get_assign_value(self, next_var):
         if self.model is None:
             return 1
-        features = build_features(self.get_involved_clauses(next_var), next_var)
+        involved_clauses = self.get_involved_clauses(next_var) + self.get_involved_clauses(-next_var)
+        features = build_features(involved_clauses, next_var)
         predicted_val = self.model.predict(features)
         logging.debug("Assigning {} to {}".format(next_var, predicted_val))
         return predicted_val
@@ -33,6 +34,8 @@ class BaseSolver(object):
         branching_fn = self.choose_branching_heuristic()
         if shortened:
             formula = self.shorten_formula(formula, assignments)
+        assert [] not in formula
+        # print("---", branching_fn(formula, assignments))
         next_var = 0 if len(formula) == 0 else branching_fn(formula, assignments)[0]
         logging.debug("Assign {} next at #{}".format(next_var, self.pick_branching_num))
         return next_var
@@ -54,6 +57,8 @@ class BaseSolver(object):
                 if self.compute_val(lit, assignment) == -1:
                     shortened_clause.append(lit)
             if not satisfied_clause:
+                # if len(shortened_clause) == 0:
+                    # print(clause, formula)
                 shortened_formula.append(shortened_clause)
         return shortened_formula
     def choose_branching_heuristic(self):
@@ -114,6 +119,7 @@ class BaseSolver(object):
         return [s[0] for s in total_counts.most_common(k)]
     def heuristic_jw(self, formula, assignments, k=1):
         jw_scores = Counter()
+        # print("Formula {}".format(formula))
         for clause in formula:
             for lit in clause:
                 var = abs(lit)

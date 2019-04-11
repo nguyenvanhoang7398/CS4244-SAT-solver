@@ -5,7 +5,7 @@ from io_utils import SatReader, SatWriter
 from dpll import DPLL
 from cdcl import CDCL
 from cdcl_wl import CDCL_WL
-# from cryptosat import CryptoSat
+from cryptosat import CryptoSat
 import os
 
 CONFIGS = None
