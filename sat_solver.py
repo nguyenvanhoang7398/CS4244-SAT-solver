@@ -5,7 +5,7 @@ from io_utils import SatReader, SatWriter
 from dpll import DPLL
 from cdcl import CDCL
 from cdcl_wl import CDCL_WL
-from cryptosat import CryptoSat
+# from cryptosat import CryptoSat
 import os
 
 CONFIGS = None
@@ -72,6 +72,8 @@ def run_sat_solver_multiple(configs):
 def write_metrics_to_output(configs, solver_metrics, type):
     seconds = [metric.exec_time for metric in solver_metrics]
     avg_seconds = sum(seconds) / float(len(seconds))
+    check_clause_status_time = [metric.check_clause_status_time for metric in solver_metrics]
+    avg_check_clause_status_time = sum(check_clause_status_time) / float(len(check_clause_status_time))
     pick_branching_nums = [metric.pick_branching_num for metric in solver_metrics]
     avg_pick_branching_nums = sum(pick_branching_nums) / float(len(pick_branching_nums))
     heuristic = configs.branching_heuristic if configs.branching_heuristic else ""
@@ -81,6 +83,7 @@ def write_metrics_to_output(configs, solver_metrics, type):
         f.write("-" * 10 + experiment_name + "-" * 10 + "\n")
         f.write("Average time for {}: {}\n".format(type, str(datetime.timedelta(seconds=avg_seconds))))
         f.write("Average number of picking branching variables for {}: {}\n".format(type, str(avg_pick_branching_nums)))
+        f.write("Average time to check clause status for {}: {}\n".format(type, avg_check_clause_status_time))
 
 def extract_input_name(input_path):
     return os.path.basename(input_path)

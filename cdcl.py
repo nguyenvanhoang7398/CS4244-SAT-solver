@@ -107,6 +107,12 @@ class CDCL(BaseSolver):
         logging.debug("Newly assigned vars {}".format(self.newly_assigned_vars))
     def get_involved_clauses(self, lit):
         return [self.hash_clause_map[h] for h in self.lit_hash_map[lit]]
+    def check_clause_status_wrapper(self, lit, i):
+        start_time = datetime.datetime.now()
+        res = self.check_clause_status(lit, i)
+        exec_time = (datetime.datetime.now() - start_time).total_seconds()
+        self.check_clause_status_time += exec_time
+        return res
     def check_clause_status(self, lit, i):
         clause = self.get_involved_clauses(lit)[i]
         clause_values = [self.compute_val(lit, self.assignments) for lit in clause]
@@ -122,7 +128,7 @@ class CDCL(BaseSolver):
     def check_and_assign_pure_lit(self, lit, source_var, level):
         all_pos_clause_is_sat = True
         for i in range(len(self.get_involved_clauses(lit))):
-            status, clause, unassigned_lit = self.check_clause_status(lit, i)
+            status, clause, unassigned_lit = self.check_clause_status_wrapper(lit, i)
             if status != "sat":
                 all_pos_clause_is_sat = False
         if all_pos_clause_is_sat:
@@ -131,7 +137,7 @@ class CDCL(BaseSolver):
             return
         all_neg_clause_is_sat = True
         for i in range(len(self.get_involved_clauses(-lit))):
-            status, clause, unassigned_lit = self.check_clause_status(-lit, i)
+            status, clause, unassigned_lit = self.check_clause_status_wrapper(-lit, i)
             if status != "sat":
                 all_neg_clause_is_sat = False
         if all_neg_clause_is_sat:
@@ -144,7 +150,7 @@ class CDCL(BaseSolver):
             false_lit = -true_lit
             logging.debug("Formula of newly assigned vars {}".format(self.get_involved_clauses(var)))
             for i in range(len(self.get_involved_clauses(false_lit))):
-                status, clause, unassigned_lit = self.check_clause_status(false_lit, i)
+                status, clause, unassigned_lit = self.check_clause_status_wrapper(false_lit, i)
                 if status == "conflict":
                     self.update_implication_graph(0, clause)
                     return True

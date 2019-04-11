@@ -13,6 +13,7 @@ class BaseSolver(object):
         self.set_log_level(log_level, log_file)
         self.branching_heuristic = branching_heuristic
         self.pick_branching_num = 0
+        self.check_clause_status_time = 0.0
         self.load_model(model_path)
     def hash_clause(self, clause):
         return "#".join([str(lit) for lit in clause])
@@ -214,4 +215,5 @@ class BaseSolver(object):
         sat = self.solve_sat()
         exec_time = (datetime.datetime.now() - start_time).total_seconds()
         pick_branching_num = self.pick_branching_num
-        return Metrics(sat, exec_time, pick_branching_num)
+        check_clause_status_time = self.check_clause_status_time
+        return Metrics(sat, exec_time, pick_branching_num, check_clause_status_time)
