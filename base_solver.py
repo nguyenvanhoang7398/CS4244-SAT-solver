@@ -9,12 +9,18 @@ from ml_utils import build_features
 class BaseSolver(object):
     def __init__(self, formula, atomic_props, log_level=None, log_file=None, branching_heuristic=None, model_path=None):
         self.formula = formula
-        self.atomic_props = atomic_props
+        self.atomic_props = self.get_atomic_props(formula)
         self.set_log_level(log_level, log_file)
-        self.branching_heuristic = branching_heuristic
         self.pick_branching_num = 0
         self.check_clause_status_time = 0.0
         self.load_model(model_path)
+        self.branching_heuristic = branching_heuristic
+        self.branching_fn = self.choose_branching_heuristic(branching_heuristic)
+    def get_atomic_props(self, formula):
+        atomic_props = set()
+        for clause in formula:
+            [atomic_props.add(abs(lit)) for lit in clause]
+        return list(atomic_props)
     def hash_clause(self, clause):
         return "#".join([str(lit) for lit in clause])
     def load_model(self, model_path):
@@ -32,14 +38,13 @@ class BaseSolver(object):
         return predicted_val
     def assign_next_var(self, formula, assignments, shortened=False):
         self.pick_branching_num += 1
-        branching_fn = self.choose_branching_heuristic()
         if shortened:
             formula = self.shorten_formula(formula, assignments)
         assert [] not in formula
-        # print("---", branching_fn(formula, assignments))
-        next_var = 0 if len(formula) == 0 else branching_fn(formula, assignments)[0]
-        logging.debug("Assign {} next at #{}".format(next_var, self.pick_branching_num))
-        return next_var
+        next_var = 0 if len(formula) == 0 else self.branching_fn(formula, assignments)[0]
+        next_var_val = -1 if next_var == 0 else self.get_assign_value(next_var)
+        logging.debug("Assign {} next as {} at #{}".format(next_var, next_var_val, self.pick_branching_num))
+        return next_var, next_var_val
     def compute_val(self, lit, assignments):
         if abs(lit) not in assignments:
             return -1
@@ -58,32 +63,30 @@ class BaseSolver(object):
                 if self.compute_val(lit, assignment) == -1:
                     shortened_clause.append(lit)
             if not satisfied_clause:
-                # if len(shortened_clause) == 0:
-                    # print(clause, formula)
                 shortened_formula.append(shortened_clause)
         return shortened_formula
-    def choose_branching_heuristic(self):
-        if self.branching_heuristic == "order":
+    def choose_branching_heuristic(self, branching_heuristic):
+        if branching_heuristic == "order":
             return self.heuristic_ordered
-        if self.branching_heuristic == "random":
+        if branching_heuristic == "random":
             return self.heuristic_random
-        if self.branching_heuristic == "2clause":
+        if branching_heuristic == "2clause":
             return self.heuristic_2clause
-        if self.branching_heuristic == "maxo":
+        if branching_heuristic == "maxo":
             return self.heuristic_maxo
-        if self.branching_heuristic == "moms":
+        if branching_heuristic == "moms":
             return self.heuristic_moms
-        if self.branching_heuristic == "mams":
+        if branching_heuristic == "mams":
             return self.heuristic_mams
-        if self.branching_heuristic == "jw":
+        if branching_heuristic == "jw":
             return self.heuristic_jw
-        if self.branching_heuristic == "up":
+        if branching_heuristic == "up":
             return self.heuristic_up
-        if self.branching_heuristic == "gup":
+        if branching_heuristic == "gup":
             return self.heuristic_gup
-        if self.branching_heuristic == "sup":
+        if branching_heuristic == "sup":
             return self.heuristic_sup
-        return self.heuristic_2clause
+        return self.heuristic_random
     def set_log_level(self, log_level, log_file):
         for handler in logging.root.handlers[:]:
             logging.root.removeHandler(handler)
@@ -118,14 +121,16 @@ class BaseSolver(object):
             total_cnt = cnt + moms_counts[var] if var in moms_counts else cnt
             total_counts[var] = total_cnt
         return [s[0] for s in total_counts.most_common(k)]
-    def heuristic_jw(self, formula, assignments, k=1):
+    def compute_jw_scores(self, formula):
         jw_scores = Counter()
-        # print("Formula {}".format(formula))
         for clause in formula:
             for lit in clause:
                 var = abs(lit)
                 jw_scores[var] = jw_scores[var] if var in jw_scores else 0
                 jw_scores[var] += 2**(-len(clause))
+        return jw_scores
+    def heuristic_jw(self, formula, assignments, k=1):
+        jw_scores = self.compute_jw_scores(formula)
         return [s[0] for s in jw_scores.most_common(k)]
     def heuristic_2clause(self, formula, assignments, k=1):
         var_counts_2clause = Counter()

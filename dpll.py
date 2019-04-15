@@ -63,8 +63,8 @@ class DPLL(BaseSolver):
             return formula, assignments, True
         if not formula:
             return formula, assignments, False
-        next_ap = self.assign_next_var(formula, assignments)
-        next_lit = next_ap if self.get_assign_value(next_ap) == 1 else -next_ap
+        next_ap, next_var_val = self.assign_next_var(formula, assignments)
+        next_lit = next_ap if next_var_val == 1 else -next_ap
         logging.debug("Assigning next ap: {}".format(next_lit))
         tmp_formula, tmp_assignments, unsat = self.resolve_by_lit(formula, next_lit)
         self.debug_msg(level, "assigning {}".format(next_lit), tmp_formula, self.add_to_assignments(assignments, tmp_assignments + [next_lit]), unsat)

@@ -57,7 +57,7 @@ def run_sat_solver_single(configs, input_path):
     metric = solver.solve()
     sat_output = "SAT" if metric.sat else "UNSAT"
     sat_writer.write_output(output_file, sat_output)
-    print(metric.pick_branching_num)
+    print(sat_output, metric.pick_branching_num)
     return metric
 
 def run_sat_solver_multiple(configs):
@@ -66,10 +66,15 @@ def run_sat_solver_multiple(configs):
         input_path = os.path.join(configs.input, input_name)
         solver_metric = run_sat_solver_single(configs, input_path)
         solver_metrics.append(solver_metric)
-    write_metrics_to_output(configs, [m for m in solver_metrics if m.sat], "sat")
-    write_metrics_to_output(configs, [m for m in solver_metrics if not m.sat], "unsat")
+    sat_results = [m for m in solver_metrics if m.sat]
+    unsat_results = [m for m in solver_metrics if not m.sat]
+    print(len(sat_results), len(unsat_results))
+    write_metrics_to_output(configs, sat_results, "sat")
+    write_metrics_to_output(configs, unsat_results, "unsat")
 
 def write_metrics_to_output(configs, solver_metrics, type):
+    if len(solver_metrics) == 0:
+        return
     seconds = [metric.exec_time for metric in solver_metrics]
     avg_seconds = sum(seconds) / float(len(seconds))
     check_clause_status_time = [metric.check_clause_status_time for metric in solver_metrics]

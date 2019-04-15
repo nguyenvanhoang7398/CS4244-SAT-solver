@@ -14,8 +14,8 @@ config_file="sat_solver.conf"
 
 rm -r ${input_path}
 mkdir -p ${input_path}
-echo ${num_vars}
 num_clauses=`python -c "print int(4.258*${num_vars}+58.26*(${num_vars}**(-2.0/3)))"`
+echo ${num_vars} ${num_clauses}
 while [ ${num_files} != 0 ]
 do
 	uuid=$(uuidgen)

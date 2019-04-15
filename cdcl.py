@@ -1,4 +1,5 @@
 import datetime
+import math
 import time
 import random
 import pprint
@@ -15,6 +16,49 @@ class CDCL(BaseSolver):
         self.implication_graph, self.level_forced_assign_var_map = {}, {}
         self.init_var_clause_map(atomic_props)
         self.newly_assigned_vars = []
+        self.num_conflicts = 0
+        self.branching_fn = self.choose_branching_heuristic(branching_heuristic)
+    def choose_branching_heuristic(self, branching_heuristic):
+        if branching_heuristic == "mvsids" or branching_heuristic == "cvsids":
+            self.init_vsids()
+            return self.heuristic_vsids
+        return super(CDCL, self).choose_branching_heuristic(branching_heuristic)
+    def init_vsids(self):
+        self.var_activities = {}
+        self.var_decided_vals = {}
+        self.decay_val = 0.8
+        self.decay_period = 1
+        self.bonus_coeff = 1.2
+        self.var_activities = dict(self.compute_jw_scores(self.formula))
+        self.bonus_score = max(list(self.var_activities.values()))/2.0
+    def heuristic_vsids(self, formula, assignments, k=1):
+        remaining_var_activities = {}
+        for var, activity in self.var_activities.items():
+            if var not in self.assignments:
+                remaining_var_activities[var] = activity
+        return [x[0] for x in sorted(remaining_var_activities.items(), key=lambda x: x[1])][:-k]
+    def get_assign_value_vsids(self, next_var):
+        if next_var not in self.var_decided_vals:
+            next_var_val = self.get_assign_value(next_var)
+            self.var_decided_vals[next_var] = next_var_val
+        else:
+            next_var_val = self.var_decided_vals[next_var]
+        return next_var_val
+    def assign_next_var(self, formula, assignments, shortened=False):
+        self.pick_branching_num += 1
+        if shortened:
+            formula = self.shorten_formula(formula, assignments)
+        assert [] not in formula
+        next_var = 0 if len(formula) == 0 else self.branching_fn(formula, assignments)[0]
+        if next_var != 0:
+            if self.branching_heuristic == "cvsids" or self.branching_heuristic == "mvsids":
+                next_var_val = self.get_assign_value_vsids(next_var)
+            else:
+                next_var_val = self.get_assign_value(next_var)
+        else:
+            next_var_val = -1
+        logging.debug("Assign {} next as {} at #{}".format(next_var, next_var_val, self.pick_branching_num))
+        return next_var, next_var_val
     def set_log_level(self, log_level, log_file):
         for handler in logging.root.handlers[:]:
             logging.root.removeHandler(handler)
@@ -27,8 +71,11 @@ class CDCL(BaseSolver):
     def init_var_clause_map(self, atomic_props):
         self.hash_clause_map = {}
         self.lit_hash_map = {}
-        for clause in self.formula:
-            self.hash_clause_map[self.hash_clause(clause)] = clause
+        self.clause_idx_hash_map = {}
+        for i, clause in enumerate(self.formula):
+            clause_hash = self.hash_clause(clause)
+            self.hash_clause_map[clause_hash] = clause
+            self.clause_idx_hash_map[i] = clause_hash
         for var in self.atomic_props:
             self.lit_hash_map[var] = []
             self.lit_hash_map[-var] = []
@@ -47,42 +94,52 @@ class CDCL(BaseSolver):
             self.level_assignments[level] = []
         self.level_assignments[level].append(var)
         return True
-    def assign_unit_clause(self):
-        unit_vars = []
-        for clause in self.formula:
-            if len(clause) == 1:
-                lit = clause[0]
-                assignable = self.assign_var(abs(lit), 0, self.compute_ap_assignment_value(lit))
-                if not assignable:
-                    return False
-                self.update_newly_assigned_vars([abs(lit)], False)
-                logging.debug("Assigning value {} to {} from unit clauses".format(1 if lit > 0 else 0, abs(lit)))
-        return True
     def _force_assign_var(self, var, level, value):
         self.assign_var(var, level, value)
         self.level_forced_assign_var_map[level] = var
     def force_assign_var(self, level):
         logging.debug("Level {}".format(level))
-        next_var = self.assign_next_var(self.formula, self.assignments, True)
+        next_var, next_var_val = self.assign_next_var(self.formula, self.assignments, True)
         if next_var == 0:
             return True, next_var
         if level not in self.level_assignments:
             self.level_assignments[level] = []
-        self._force_assign_var(next_var, level, self.get_assign_value(next_var))
-        return False, next_var    
-    def assign_pure_vars(self):
-        lit_counts = {}
-        for clause in self.formula:
-            for lit in clause:
-                lit_counts[lit] = 0 if lit not in lit_counts else lit_counts[lit]
-                lit_counts[lit] += 1
-        for lit, _ in lit_counts.items():
-            if -lit not in lit_counts:
-                assignable = self.assign_var(abs(lit), 0, self.compute_ap_assignment_value(lit))
-                if not assignable:
-                    raise Exception("Pure var must be assignable")
-                self.update_newly_assigned_vars([abs(lit)], False)
-                logging.debug("Assigning value {} to {} from pure vars".format(1 if lit > 0 else 0, abs(lit)))
+        self._force_assign_var(next_var, level, next_var_val)
+        return False, next_var
+    def assign_pure_vars(self, level):
+        if level-1 not in self.level_assignments:
+            checking_vars = self.atomic_props
+        else:
+            last_assigned_vars = self.level_assignments[level-1]
+            checking_vars = set()
+            for var in last_assigned_vars:
+                true_lit = var if self.assignments[var][0] > 0 else -var
+                for clause in self.get_involved_clauses(true_lit):
+                    checking_vars.union(set([abs(lit) for lit in clause]))
+            checking_vars = list(checking_vars)
+        for var in checking_vars:
+            if var not in self.assignments:
+                has_pos_lit = False
+                for clause_hash in self.lit_hash_map[var]:
+                    if self.check_clause_status_wrapper(clause_hash)[0] != "sat":
+                        has_pos_lit = True
+                if not has_pos_lit:
+                    assignable = self.assign_var(var, level, 0)
+                    if not assignable:
+                        raise Exception("Pure var must be assignable")
+                    self.update_newly_assigned_vars([var], False)
+                    logging.debug("Assigning value 0 to {} from pure vars".format(var))
+                    continue
+                has_neg_lit = False
+                for clause_hash in self.lit_hash_map[-var]:
+                    if self.check_clause_status_wrapper(clause_hash)[0] != "sat":
+                        has_neg_lit = True
+                if not has_neg_lit:
+                    assignable = self.assign_var(var, level, 1)
+                    if not assignable:
+                        raise Exception("Pure var must be assignable")
+                    self.update_newly_assigned_vars([var], False)
+                    logging.debug("Assigning value 1 to {} from pure vars".format(var))
     def assign_conflict_lit(self, clause, level):
         conflict_lit = 0
         for lit in clause:
@@ -107,14 +164,14 @@ class CDCL(BaseSolver):
         logging.debug("Newly assigned vars {}".format(self.newly_assigned_vars))
     def get_involved_clauses(self, lit):
         return [self.hash_clause_map[h] for h in self.lit_hash_map[lit]]
-    def check_clause_status_wrapper(self, lit, i):
+    def check_clause_status_wrapper(self, clause_hash):
         start_time = datetime.datetime.now()
-        res = self.check_clause_status(lit, i)
+        res = self.check_clause_status(clause_hash)
         exec_time = (datetime.datetime.now() - start_time).total_seconds()
         self.check_clause_status_time += exec_time
         return res
-    def check_clause_status(self, lit, i):
-        clause = self.get_involved_clauses(lit)[i]
+    def check_clause_status(self, clause_hash):
+        clause = self.hash_clause_map[clause_hash]
         clause_values = [self.compute_val(lit, self.assignments) for lit in clause]
         if 1 not in clause_values:  
             if -1 not in clause_values:
@@ -125,32 +182,14 @@ class CDCL(BaseSolver):
                 return "unit", clause, unassigned_lit
             return "unassaigned", [], 0
         return "sat", [], 0
-    def check_and_assign_pure_lit(self, lit, source_var, level):
-        all_pos_clause_is_sat = True
-        for i in range(len(self.get_involved_clauses(lit))):
-            status, clause, unassigned_lit = self.check_clause_status_wrapper(lit, i)
-            if status != "sat":
-                all_pos_clause_is_sat = False
-        if all_pos_clause_is_sat:
-            self.assign_lit_from_clause(-lit, [source_var], level)
-            self.update_newly_assigned_vars([abs(lit)], False)
-            return
-        all_neg_clause_is_sat = True
-        for i in range(len(self.get_involved_clauses(-lit))):
-            status, clause, unassigned_lit = self.check_clause_status_wrapper(-lit, i)
-            if status != "sat":
-                all_neg_clause_is_sat = False
-        if all_neg_clause_is_sat:
-            self.assign_lit_from_clause(lit, [source_var], level)
-            self.update_newly_assigned_vars([abs(lit)], False)
     def deduce(self, level):
         while len(self.newly_assigned_vars) > 0:
             var = self.newly_assigned_vars.pop()
             true_lit = var if self.assignments[var][0] > 0 else -var
             false_lit = -true_lit
             logging.debug("Formula of newly assigned vars {}".format(self.get_involved_clauses(var)))
-            for i in range(len(self.get_involved_clauses(false_lit))):
-                status, clause, unassigned_lit = self.check_clause_status_wrapper(false_lit, i)
+            for clause_hash in self.lit_hash_map[false_lit]:
+                status, clause, unassigned_lit = self.check_clause_status_wrapper(clause_hash)
                 if status == "conflict":
                     self.update_implication_graph(0, clause)
                     return True
@@ -158,12 +197,6 @@ class CDCL(BaseSolver):
                     self.assign_lit_from_clause(unassigned_lit, clause, level)
                     self.update_implication_graph(unassigned_lit, [-lit for lit in clause if lit != unassigned_lit])
                     self.update_newly_assigned_vars([abs(unassigned_lit)], False)
-            checked_pure_vars = []
-            for clause in self.get_involved_clauses(true_lit):
-                for lit in clause:
-                    if abs(lit) not in checked_pure_vars and abs(lit) not in self.assignments:
-                            self.check_and_assign_pure_lit(lit, var, level)
-                            checked_pure_vars.append(abs(lit))
         return False
     def assign_lit_from_clause(self, unassigned_lit, clause, level):
         assigned_value = 1 if unassigned_lit > 0 else 0
@@ -192,6 +225,8 @@ class CDCL(BaseSolver):
                 if parent not in temp_level_lits_map[parent_lvl]:
                     temp_level_lits_map[parent_lvl].append(parent)
             temp_level_lits_map[level].remove(next_lit)
+            if self.branching_heuristic == "mvsids":
+                self.var_activities[abs(next_lit)] += self.bonus_score
         learnt_clause = self.get_learnt_clause(list(chain.from_iterable(temp_level_lits_map.values())))
         levels = [self.assignments[abs(lit)][1] for lit in learnt_clause]
         backtrack_level = 0 if len(levels) < 2 else sorted(levels)[-2]
@@ -218,45 +253,49 @@ class CDCL(BaseSolver):
     def update_learnt_clause(self, learnt_clause):
         clause_hash = self.hash_clause(learnt_clause)
         self.hash_clause_map[clause_hash] = learnt_clause
+        self.clause_idx_hash_map[len(self.clause_idx_hash_map)] = clause_hash
         self.formula.append(learnt_clause)
         for lit in learnt_clause:
             self.lit_hash_map[lit].append(clause_hash)
+        return clause_hash
+    def update_var_activities(self, learnt_clause):
+        if self.branching_heuristic == "cvsids":
+            for lit in learnt_clause:
+                self.var_activities[abs(lit)] += self.bonus_score
+        logging.debug("Activity score: {}".format(self.var_activities))
+        self.bonus_score *= math.ceil(self.bonus_coeff)
+        if self.num_conflicts % self.decay_period == 0:
+            for var in self.var_activities:
+                self.var_activities[var] *= self.decay_val
+            self.bonus_score *= math.ceil(self.decay_val)
     def solve_sat(self):
-        self.assign_pure_vars()
-        level = 0
-        all_assigned = False
-        sat = True
-        while not all_assigned:
-            if level == 0:
-                unit_assignable = self.assign_unit_clause()
-                if not unit_assignable:
+        self.level = 0
+        sat = False
+        while not sat:
+            self.assign_pure_vars(self.level)
+            conflict = self.deduce(self.level)
+            if conflict:
+                if self.level == 0:
                     sat = False
                     break
-                conflict = self.deduce(level)
-                if conflict:
-                    sat = False
-                    break
-                level += 1
-                all_assigned, next_var = self.force_assign_var(level)
-                self.update_newly_assigned_vars([next_var], False)
-            else:
-                conflict = self.deduce(level)
-                if conflict:
-                    learnt_clause, backtrack_level = self.conflict_analyse(level)
-                    self.update_learnt_clause(learnt_clause)
-                    forced_assign_var, forced_assign_var_value = self.backtrack(backtrack_level, level)
-                    if backtrack_level != 0:
-                        self._force_assign_var(forced_assign_var, backtrack_level, forced_assign_var_value)
-                        self.update_newly_assigned_vars([forced_assign_var], True)
-                    else:
-                        single_lit = learnt_clause[0]
-                        self.assign_var(abs(single_lit), 0, 1 if single_lit > 0 else 0)
-                        self.update_newly_assigned_vars([abs(single_lit)], True)
-                    level = backtrack_level
+                self.num_conflicts += 1
+                learnt_clause, backtrack_level = self.conflict_analyse(self.level)
+                self.update_learnt_clause(learnt_clause)
+                forced_assign_var, forced_assign_var_value = self.backtrack(backtrack_level, self.level)
+                if backtrack_level != 0:
+                    self._force_assign_var(forced_assign_var, backtrack_level, forced_assign_var_value)
+                    self.update_newly_assigned_vars([forced_assign_var], True)
                 else:
-                    level += 1
-                    all_assigned, next_var = self.force_assign_var(level)
-                    self.update_newly_assigned_vars([next_var], True)
+                    single_lit = learnt_clause[0]
+                    self.assign_var(abs(single_lit), 0, 1 if single_lit > 0 else 0)
+                    self.update_newly_assigned_vars([abs(single_lit)], True)
+                self.level = backtrack_level
+                if self.branching_heuristic == "cvsids" or self.branching_heuristic == "mvsids":
+                    self.update_var_activities(learnt_clause)
+            else:
+                self.level += 1
+                sat, next_var = self.force_assign_var(self.level)
+                self.update_newly_assigned_vars([next_var], False)
         if sat:
             logging.debug("SAT")
         else:

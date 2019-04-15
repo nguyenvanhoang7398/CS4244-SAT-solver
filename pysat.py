@@ -11,6 +11,7 @@ import logging
 import random
 import argparse
 import re
+from collections import Counter
 
 RESULT_FILE = None
 
@@ -45,7 +46,7 @@ class Solver(object):
 
         # sign when literal decided.
         self.ASSIGN_DEFAULT = True
-        self.pickup_type = "order"
+        self.pickup_type = "jw"
 
     def solve(self):
         """start solving
@@ -63,14 +64,12 @@ class Solver(object):
         while True:
             conflict_clause = self.propagate()
             if isinstance(conflict_clause, Clause):
-                print("Conflict in {}".format(conflict_clause))
                 self.conflict_count += 1
                 if self.level == self.root_level:
                     # CONTRADICTION
                     self.status = False
                     return
                 backjump_level, learnt_clause = self.analyze(conflict_clause)
-                print("Learning {}".format(learnt_clause))
                 self.add_clause(learnt_clause)
                 self.cancel_until(backjump_level)
                 self.level = backjump_level
@@ -89,7 +88,6 @@ class Solver(object):
                     return
                 else:
                     self.decide(next_lit)
-                    print("Assign {} as {} at #{}".format(next_lit.id, next_lit.sign, self.pick_branching_num))
 
         pass
 
@@ -122,7 +120,6 @@ class Solver(object):
                 sign = blit.get_raw_sign()
                 blit.lit.assign(sign,self.level,reason)
                 if self.level != 0:
-                    print("Assign {} to {} from {}".format(blit.lit.sign, blit.lit.id, reason))
                     self.propagate_history[self.level].append(blit)
 
     def analyze(self, conflict_clause):
@@ -139,7 +136,6 @@ class Solver(object):
 
         # implication graph in the level
         LIT_HISTORY = [self.decide_history[self.level]]+[x.lit for x in self.propagate_history[self.level]]
-        print("Lit history {} = decide history {} + propagate history {}".format([lit.id for lit in LIT_HISTORY], self.decide_history[self.level], [x.lit.id for x in self.propagate_history[self.level]]))
         def _pop_next_pointer(blit_set):
             # pop latest literal on implication graph from blit_set
             #
@@ -281,12 +277,24 @@ class Solver(object):
             else:
                 i = random.randint(0,len(l)-1)
                 return l[i]
+        elif self.pickup_type == 'jw':
+            jw_scores = Counter()
+            all_clauses = self.clause_list + self.learnt_list
+            for clause in all_clauses:
+                for lit in clause.get_bindlit_list():
+                    if lit.lit.is_unassigned():
+                        var = lit.lit.get_id()
+                        jw_scores[var] = jw_scores[var] if var in jw_scores else 0
+                        jw_scores[var] += 2**(-len(clause))
+            chosen_var = jw_scores.most_common(1)[0][0]
+            return self.litlist.get(chosen_var)
         else:
             # order
             for lit in self.litlist:
                 if lit.is_unassigned():
                     return lit
             return None
+        
 
     def print_result(self):
         """print satisfied or unsatisfied"""
