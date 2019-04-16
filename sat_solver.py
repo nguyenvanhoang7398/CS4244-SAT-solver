@@ -18,7 +18,7 @@ def add_arguments(parser):
     parser.add_argument("--output", type=str, default="output/", help="SAT output")
     parser.add_argument("--result", type=str, default="output/results.txt", help="Experiment results")
     parser.add_argument("--solver-name", type=str, default="cdcl_wl", help="Solver's name")
-    parser.add_argument("--branching-heuristic", type=str, default=None, help="Branching heuristic")
+    parser.add_argument("--branching-heuristic", type=str, default="jw", help="Branching heuristic")
     parser.add_argument("--experiment-name", type=str, default=None, help="Experiment's name")
     parser.add_argument("--model-dir", type=str, default="model_dir", help="Variable prediction model directory")
     parser.add_argument("--model-name", type=str, default=None, help="Variable prediction model name")
